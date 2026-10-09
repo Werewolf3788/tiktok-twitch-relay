@@ -415,3 +415,32 @@ Open cron-job.org (or any free uptime monitor).
 Set up an HTTP GET request pointing to your Render app URL (e.g., https://your-service.onrender.com).
 
 Set the schedule to run every 10 minutes. 
+
+
+---
+
+## 🤖 Need Help? Instant AI Setup Assistant
+
+If you get stuck or want step-by-step guidance tailored to your exact channel names, you can hand this entire repository to an AI setup assistant:
+
+[![Open in Claude](https://img.shields.io/badge/Setup_with-Claude-7A5CFA?style=for-the-badge&logo=anthropic&logoColor=white)](https://claude.ai/new?q=I%20am%20setting%20up%20the%20TikTok%20and%20Nimo%20to%20Twitch%20relay%20from%20this%20repository.%20Please%20walk%20me%20through%20configuring%20my%20Twitch%20bot,%20Google%20Apps%20Script,%20and%20Render.com%20worker%20step-by-step.)
+[![Open in ChatGPT](https://img.shields.io/badge/Setup_with-ChatGPT-10A37F?style=for-the-badge&logo=openai&logoColor=white)](https://chatgpt.com/)
+[![Open in Gemini](https://img.shields.io/badge/Setup_with-Gemini-4E87F8?style=for-the-badge&logo=google&logoColor=white)](https://gemini.google.com/)
+
+### 📋 1-Click Copy Prompt for Your AI
+Copy and paste this prompt into ChatGPT, Gemini, or Claude to get guided onboarding:
+
+> ```text
+> I am setting up the cloud-native TikTok & Nimo TV to Twitch chat relay from this repository:
+> [https://github.com/Werewolf3788/tiktok-twitch-relay](https://github.com/Werewolf3788/tiktok-twitch-relay)
+> 
+> My goal is to run a 100% PC-off relay so messages from TikTok and Nimo appear in my Twitch chat while streaming from console.
+> 
+> Please act as my technical guide:
+> 1. Ask me for my Twitch channel name, Bot username, and TikTok handle.
+> 2. Walk me step-by-step through generating the Twitch OAuth token and numeric IDs.
+> 3. Provide my tailored Google Apps Script code with all my values filled in.
+> 4. Help me deploy the Render.com service and configure the 10-minute keep-alive ping.
+> ```
+
+---
