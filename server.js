@@ -169,7 +169,6 @@ function stopNimoListener() {
 async function loopWatcher() {
   const live = await isTwitchLive();
 
-  // FOR TESTING: Even if Twitch is offline, still connect to TikTok
   console.log(`[Stream Gate] Twitch live state is: ${live}`);
   
   startTikTokListener();
@@ -177,7 +176,6 @@ async function loopWatcher() {
     startNimoListener();
   }
 
-  // Check again in 60 seconds
   setTimeout(loopWatcher, 60000);
 }
 
