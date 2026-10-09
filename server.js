@@ -1,13 +1,6 @@
-// Section: Web Server & Express Keep-Alive (Lines 2-19)
+// Section: Web Server & Express Keep-Alive (Lines 2-35)
 const express = require('express');
-const TikTokModule = require('tiktok-live-connector');
-
-const WebcastPushConnection = 
-  TikTokModule.WebcastPushConnection || 
-  TikTokModule.default?.WebcastPushConnection || 
-  TikTokModule.default || 
-  TikTokModule;
-
+const TikTokPackage = require('tiktok-live-connector');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 
@@ -17,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Chat Relay Worker (TikTok & Nimo) is running.'));
 app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
 
-// Section: Stream Target & Webhook Configuration (Lines 21-28)
+// Section: Stream Target & Webhook Configuration (Lines 37-44)
 const TIKTOK_USERNAME = 'k082412';
 const TIKTOK_SESSION_ID = process.env.TIKTOK_SESSION_ID || '';
 const TWITCH_CHANNEL = 'werewolf3788';
@@ -29,7 +22,29 @@ let tiktokLiveConnection = null;
 let nimoBrowser = null;
 let isNimoRunning = false;
 
-// Section: DecAPI Twitch Stream Checker (Lines 30-42)
+// Section: Universal TikTok Constructor Resolver (Lines 46-64)
+function createTikTokConnection(username, options) {
+  if (typeof TikTokPackage === 'function') {
+    return new TikTokPackage(username, options);
+  }
+  if (TikTokPackage.WebcastPushConnection && typeof TikTokPackage.WebcastPushConnection === 'function') {
+    return new TikTokPackage.WebcastPushConnection(username, options);
+  }
+  if (TikTokPackage.TikTokLiveConnector && typeof TikTokPackage.TikTokLiveConnector === 'function') {
+    return new TikTokPackage.TikTokLiveConnector(username, options);
+  }
+  if (TikTokPackage.default) {
+    if (typeof TikTokPackage.default === 'function') {
+      return new TikTokPackage.default(username, options);
+    }
+    if (typeof TikTokPackage.default.WebcastPushConnection === 'function') {
+      return new TikTokPackage.default.WebcastPushConnection(username, options);
+    }
+  }
+  throw new Error('Available export keys: ' + Object.keys(TikTokPackage).join(', '));
+}
+
+// Section: DecAPI Twitch Stream Checker (Lines 66-78)
 async function isTwitchLive() {
   try {
     const res = await fetch(`https://decapi.me/twitch/uptime/${TWITCH_CHANNEL}`);
@@ -42,7 +57,7 @@ async function isTwitchLive() {
   }
 }
 
-// Section: Dispatch to Google Apps Script (Lines 44-60)
+// Section: Dispatch to Google Apps Script (Lines 80-96)
 function relayToAppsScript(platform, username, message) {
   const payload = { platform, username, message };
   console.log(`[Relay Triggered] Sending ${platform} message from ${username} to Apps Script...`);
@@ -57,7 +72,7 @@ function relayToAppsScript(platform, username, message) {
   .catch(err => console.error(`Error relaying ${platform} chat to Apps Script:`, err.message));
 }
 
-// Section: TikTok Connection Manager (Lines 62-108)
+// Section: TikTok Connection Manager (Lines 98-144)
 function startTikTokListener() {
   if (tiktokLiveConnection) return;
   console.log(`[TikTok] Initializing connection for @${TIKTOK_USERNAME}...`);
@@ -71,7 +86,7 @@ function startTikTokListener() {
   }
 
   try {
-    tiktokLiveConnection = new WebcastPushConnection(TIKTOK_USERNAME, connectionOptions);
+    tiktokLiveConnection = createTikTokConnection(TIKTOK_USERNAME, connectionOptions);
 
     tiktokLiveConnection.connect().then(state => {
       console.log(`[TikTok] Connected to Room ID: ${state.roomId}`);
@@ -98,12 +113,12 @@ function startTikTokListener() {
       tiktokLiveConnection = null;
     });
   } catch (e) {
-    console.error('[TikTok Constructor Error]:', e.message);
+    console.error('[TikTok Loader Error]:', e.message);
     tiktokLiveConnection = null;
   }
 }
 
-// Section: Lightweight Nimo TV Headless Scraper (Lines 110-177)
+// Section: Lightweight Nimo TV Headless Scraper (Lines 146-213)
 async function startNimoListener() {
   if (isNimoRunning) return;
   isNimoRunning = true;
@@ -187,7 +202,7 @@ function stopNimoListener() {
   console.log('[Nimo] Listener stopped.');
 }
 
-// Section: Master Polling Engine (Lines 179-200)
+// Section: Master Polling Engine (Lines 215-236)
 async function loopWatcher() {
   const live = await isTwitchLive();
 
