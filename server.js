@@ -1,7 +1,13 @@
-// Section: Web Server & Express Keep-Alive (Lines 2-14)
+// Section: Web Server & Express Keep-Alive (Lines 2-19)
 const express = require('express');
-const TikTokLive = require('tiktok-live-connector');
-const WebcastPushConnection = TikTokLive.WebcastPushConnection || TikTokLive;
+const TikTokModule = require('tiktok-live-connector');
+
+const WebcastPushConnection = 
+  TikTokModule.WebcastPushConnection || 
+  TikTokModule.default?.WebcastPushConnection || 
+  TikTokModule.default || 
+  TikTokModule;
+
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 
@@ -11,7 +17,7 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Chat Relay Worker (TikTok & Nimo) is running.'));
 app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
 
-// Section: Stream Target & Webhook Configuration (Lines 16-23)
+// Section: Stream Target & Webhook Configuration (Lines 21-28)
 const TIKTOK_USERNAME = 'k082412';
 const TIKTOK_SESSION_ID = process.env.TIKTOK_SESSION_ID || '';
 const TWITCH_CHANNEL = 'werewolf3788';
@@ -23,7 +29,7 @@ let tiktokLiveConnection = null;
 let nimoBrowser = null;
 let isNimoRunning = false;
 
-// Section: DecAPI Twitch Stream Checker (Lines 25-37)
+// Section: DecAPI Twitch Stream Checker (Lines 30-42)
 async function isTwitchLive() {
   try {
     const res = await fetch(`https://decapi.me/twitch/uptime/${TWITCH_CHANNEL}`);
@@ -36,7 +42,7 @@ async function isTwitchLive() {
   }
 }
 
-// Section: Dispatch to Google Apps Script (Lines 39-55)
+// Section: Dispatch to Google Apps Script (Lines 44-60)
 function relayToAppsScript(platform, username, message) {
   const payload = { platform, username, message };
   console.log(`[Relay Triggered] Sending ${platform} message from ${username} to Apps Script...`);
@@ -51,7 +57,7 @@ function relayToAppsScript(platform, username, message) {
   .catch(err => console.error(`Error relaying ${platform} chat to Apps Script:`, err.message));
 }
 
-// Section: TikTok Connection Manager (Lines 57-97)
+// Section: TikTok Connection Manager (Lines 62-108)
 function startTikTokListener() {
   if (tiktokLiveConnection) return;
   console.log(`[TikTok] Initializing connection for @${TIKTOK_USERNAME}...`);
@@ -64,35 +70,40 @@ function startTikTokListener() {
     connectionOptions.sessionId = TIKTOK_SESSION_ID;
   }
 
-  tiktokLiveConnection = new WebcastPushConnection(TIKTOK_USERNAME, connectionOptions);
+  try {
+    tiktokLiveConnection = new WebcastPushConnection(TIKTOK_USERNAME, connectionOptions);
 
-  tiktokLiveConnection.connect().then(state => {
-    console.log(`[TikTok] Connected to Room ID: ${state.roomId}`);
-  }).catch(err => {
-    console.log(`[TikTok] Not live or connection error: ${err.message || err}`);
-    tiktokLiveConnection = null;
-  });
-
-  tiktokLiveConnection.on('chat', data => {
-    console.log(`[TikTok Chat Inbound] ${data.uniqueId}: ${data.comment}`);
-    relayToAppsScript('TikTok', data.nickname || data.uniqueId, data.comment);
-  });
-
-  tiktokLiveConnection.on('streamEnd', () => {
-    console.log('[TikTok] Stream ended.');
-    if (tiktokLiveConnection) {
-      tiktokLiveConnection.disconnect();
+    tiktokLiveConnection.connect().then(state => {
+      console.log(`[TikTok] Connected to Room ID: ${state.roomId}`);
+    }).catch(err => {
+      console.log(`[TikTok] Not live or connection error: ${err.message || err}`);
       tiktokLiveConnection = null;
-    }
-  });
+    });
 
-  tiktokLiveConnection.on('disconnected', () => {
-    console.log('[TikTok] Socket disconnected.');
+    tiktokLiveConnection.on('chat', data => {
+      console.log(`[TikTok Chat Inbound] ${data.uniqueId}: ${data.comment}`);
+      relayToAppsScript('TikTok', data.nickname || data.uniqueId, data.comment);
+    });
+
+    tiktokLiveConnection.on('streamEnd', () => {
+      console.log('[TikTok] Stream ended.');
+      if (tiktokLiveConnection) {
+        tiktokLiveConnection.disconnect();
+        tiktokLiveConnection = null;
+      }
+    });
+
+    tiktokLiveConnection.on('disconnected', () => {
+      console.log('[TikTok] Socket disconnected.');
+      tiktokLiveConnection = null;
+    });
+  } catch (e) {
+    console.error('[TikTok Constructor Error]:', e.message);
     tiktokLiveConnection = null;
-  });
+  }
 }
 
-// Section: Lightweight Nimo TV Headless Scraper (Lines 99-166)
+// Section: Lightweight Nimo TV Headless Scraper (Lines 110-177)
 async function startNimoListener() {
   if (isNimoRunning) return;
   isNimoRunning = true;
@@ -176,7 +187,7 @@ function stopNimoListener() {
   console.log('[Nimo] Listener stopped.');
 }
 
-// Section: Master Polling Engine (Lines 168-189)
+// Section: Master Polling Engine (Lines 179-200)
 async function loopWatcher() {
   const live = await isTwitchLive();
 
