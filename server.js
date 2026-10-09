@@ -21,11 +21,12 @@ let tiktokLiveConnection = null;
 let nimoBrowser = null;
 let isNimoRunning = false;
 
-// Section: DecAPI Twitch Stream Checker (Lines 23-34)
+// Section: DecAPI Twitch Stream Checker (Lines 23-35)
 async function isTwitchLive() {
   try {
     const res = await fetch(`https://decapi.me/twitch/uptime/${TWITCH_CHANNEL}`);
     const text = await res.text();
+    console.log(`[DecAPI Check] Result for ${TWITCH_CHANNEL}: "${text.trim()}"`);
     return !text.toLowerCase().includes('offline');
   } catch (err) {
     console.error('DecAPI check error:', err.message);
@@ -33,20 +34,22 @@ async function isTwitchLive() {
   }
 }
 
-// Section: Dispatch to Google Apps Script (Lines 36-49)
+// Section: Dispatch to Google Apps Script (Lines 37-53)
 function relayToAppsScript(platform, username, message) {
   const payload = { platform, username, message };
+  console.log(`[Relay Triggered] Sending ${platform} message from ${username} to Apps Script...`);
+
   fetch(GAS_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   })
   .then(res => res.text())
-  .then(() => console.log(`[Relayed - ${platform}] ${username}: ${message}`))
-  .catch(err => console.error(`Error relaying ${platform} chat:`, err.message));
+  .then(body => console.log(`[GAS Response - ${platform}] Status text: ${body}`))
+  .catch(err => console.error(`Error relaying ${platform} chat to Apps Script:`, err.message));
 }
 
-// Section: TikTok Connection Manager (Lines 51-86)
+// Section: TikTok Connection Manager (Lines 55-90)
 function startTikTokListener() {
   if (tiktokLiveConnection) return;
   console.log(`[TikTok] Initializing connection for @${TIKTOK_USERNAME}...`);
@@ -55,11 +58,12 @@ function startTikTokListener() {
   tiktokLiveConnection.connect().then(state => {
     console.log(`[TikTok] Connected to Room ID: ${state.roomId}`);
   }).catch(err => {
-    console.log('[TikTok] Not live or connecting error. Retrying later.');
+    console.log(`[TikTok] Not live or connection error: ${err.message || err}`);
     tiktokLiveConnection = null;
   });
 
   tiktokLiveConnection.on('chat', data => {
+    console.log(`[TikTok Chat Inbound] ${data.uniqueId}: ${data.comment}`);
     relayToAppsScript('TikTok', data.nickname || data.uniqueId, data.comment);
   });
 
@@ -77,7 +81,7 @@ function startTikTokListener() {
   });
 }
 
-// Section: Lightweight Nimo TV Headless Scraper (Lines 88-155)
+// Section: Lightweight Nimo TV Headless Scraper (Lines 92-159)
 async function startNimoListener() {
   if (isNimoRunning) return;
   isNimoRunning = true;
@@ -103,7 +107,6 @@ async function startNimoListener() {
 
     const page = await nimoBrowser.newPage();
     
-    // Block images, fonts, media, and CSS stylesheets to save bandwidth and memory
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const type = req.resourceType();
@@ -114,7 +117,6 @@ async function startNimoListener() {
       }
     });
 
-    // Expose node function so browser-context DOM mutations push straight to Node
     await page.exposeFunction('sendNimoMessage', (user, text) => {
       relayToAppsScript('Nimo', user, text);
     });
@@ -123,7 +125,6 @@ async function startNimoListener() {
     await page.goto(popoutUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     console.log('[Nimo] Page loaded. Watching DOM mutations...');
 
-    // Observe incoming chat nodes in the DOM
     await page.evaluate(() => {
       const seen = new Set();
       const observer = new MutationObserver((mutations) => {
@@ -135,7 +136,6 @@ async function startNimoListener() {
                 seen.add(fullText);
                 if (seen.size > 200) seen.clear();
 
-                // Nimo chat lines format as "Username: Message"
                 const parts = fullText.split(':');
                 if (parts.length >= 2) {
                   const user = parts[0].trim();
@@ -165,37 +165,20 @@ function stopNimoListener() {
   console.log('[Nimo] Listener stopped.');
 }
 
-// Section: Master Polling Engine (Lines 157-190)
+// Section: Master Polling Engine (Lines 161-182)
 async function loopWatcher() {
   const live = await isTwitchLive();
 
-  if (!live) {
-    if (isTwitchActive) {
-      console.log(`[Twitch Offline] Disconnecting workers...`);
-      if (tiktokLiveConnection) {
-        tiktokLiveConnection.disconnect();
-        tiktokLiveConnection = null;
-      }
-      stopNimoListener();
-      isTwitchActive = false;
-    }
-    setTimeout(loopWatcher, 60000);
-    return;
-  }
-
-  // Stream is live
-  if (!isTwitchActive) {
-    console.log(`[Twitch Live!] Activating TikTok and Nimo workers...`);
-    isTwitchActive = true;
-  }
-
+  // FOR TESTING: Even if Twitch is offline, still connect to TikTok
+  console.log(`[Stream Gate] Twitch live state is: ${live}`);
+  
   startTikTokListener();
   if (!isNimoRunning) {
     startNimoListener();
   }
 
-  // Verify status every 2 minutes
-  setTimeout(loopWatcher, 120000);
+  // Check again in 60 seconds
+  setTimeout(loopWatcher, 60000);
 }
 
 // Kick off loop
