@@ -1,7 +1,7 @@
 {
   "name": "tiktok-twitch-relay",
   "version": "1.0.0",
-  "description": "TikTok & Nimo TV Live Chat to Twitch Relay",
+  "description": "TikTok, Nimo TV & YouTube Live Chat to Twitch Relay",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,6 +10,7 @@
     "@sparticuz/chromium": "^131.0.1",
     "express": "^4.19.2",
     "puppeteer-core": "^23.6.0",
-    "tiktok-live-connector": "^2.0.0"
+    "tiktok-live-connector": "^2.0.0",
+    "youtube-chat": "^2.2.0"
   }
 }
