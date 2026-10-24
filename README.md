@@ -1,50 +1,55 @@
-# Cloud-Based Multi-Platform Chat Relay to Twitch (PC-Off / Console)
+Cloud-Based Multi-Platform Chat Relay to Twitch (PC-Off / Console)
+A cloud relay engine designed for console and mobile streamers who broadcast without a local computer. Incoming chat messages from TikTok Live, YouTube Live, and Nimo TV are captured in the cloud and broadcast directly into your Twitch chat via a dedicated moderator bot account.
 
-A cloud relay engine designed for console and mobile streamers who broadcast without a local computer. Incoming chat messages from **TikTok Live** and **Nimo TV** are captured in the cloud and broadcast directly into your **Twitch chat** via a dedicated moderator bot account.
-
----
-
-## Architecture Flow
-
-```text
-  ┌────────────────────────┐      ┌────────────────────────┐
-  │   TikTok Live Chat     │      │   Nimo TV Live Chat    │
-  │ (Protobuf WebSocket)   │      │   (Headless Chromium)  │
-  └───────────┬────────────┘      └───────────┬────────────┘
-              │                               │
-              └───────────────┬───────────────┘
-                              │
-                              ▼
-               ┌─────────────────────────────┐
-               │ Render.com Free Web Service │
-               │ (Node.js Keep-Alive Worker) │
-               └──────────────┬──────────────┘
-                              │ HTTP POST (JSON Payload)
-                              ▼
-               ┌─────────────────────────────┐
-               │  Google Apps Script Web App │
-               │     (doPost Webhook Hub)    │
-               └──────────────┬──────────────┘
-                              │ Twitch Helix REST API
-                              ▼
-               ┌─────────────────────────────┐
-               │      Twitch Live Chat       │
-               │ (Delivered via Bot Account) │
-               └─────────────────────────────┘
+Architecture Flow
+Plaintext
+  ┌────────────────────────┐      ┌────────────────────────┐      ┌────────────────────────┐
+  │    TikTok Live Chat    │      │   YouTube Live Chat    │      │    Nimo TV Live Chat   │
+  │    (TikFinity Webhook) │      │  (youtube-chat Socket) │      │   (Headless Chromium)  │
+  └───────────┬────────────┘      └───────────┬────────────┘      └───────────┬────────────┘
+              │                               │                               │
+              │                               └───────────────┬───────────────┘
+              │                                               │
+              │ HTTP GET (URL Query Params)                   │ HTTP POST (JSON Payload)
+              │                                               ▼
+              │                                ┌─────────────────────────────┐
+              │                                │ Render.com Free Web Service │
+              │                                │ (Node.js Keep-Alive Worker) │
+              │                                └──────────────┬──────────────┘
+              │                                               │ HTTP POST (JSON Payload)
+              └───────────────────────┬───────────────────────┘
+                                      │
+                                      ▼
+                       ┌─────────────────────────────┐
+                       │  Google Apps Script Web App │
+                       │    (doGet / doPost Hub)     │
+                       └──────────────┬──────────────┘
+                                      │ Twitch Helix REST API
+                                      ▼
+                       ┌─────────────────────────────┐
+                       │      Twitch Live Chat       │
+                       │ (Delivered via Bot Account) │
+                       └─────────────────────────────┘
 DecAPI Stream Check: The worker monitors your stream status via DecAPI. When offline, worker processes stay idle to conserve memory and avoid rate limits.
 
 Cloud Ingestion (Render.com):
 
-Ingests TikTok Live chat events via reverse-engineered WebSockets (tiktok-live-connector).
+Ingests YouTube Live chat events in real time using persistent WebSocket connections (youtube-chat).
 
-Watches Nimo TV live chat through a headless browser instance (@sparticuz/chromium + puppeteer-core) optimized for 512 MB cloud environments.
+Ingests Nimo TV live chat through a headless browser instance (@sparticuz/chromium + puppeteer-core) optimized for 512 MB cloud environments.
 
-Dispatch Layer (Google Apps Script): Receives HTTP POST JSON payloads from Render and posts into Twitch chat using the Twitch Helix API (/helix/chat/messages).
+Cloud Ingestion (TikFinity Actions & Events):
+
+Intercepts TikTok Live chat on TikFinity's cloud servers and pushes query strings directly to the Google Apps Script endpoint via outbound HTTP Webhook triggers.
+
+Dispatch Layer (Google Apps Script): Receives HTTP POST JSON payloads from Render and HTTP GET query parameters from TikFinity, then posts into Twitch chat using the Twitch Helix API (/helix/chat/messages).
 
 🔗 Quick Setup Links
 Twitch Developer Console
 
 Google Apps Script Dashboard
+
+TikFinity Actions & Events
 
 Render.com Dashboard
 
@@ -55,9 +60,11 @@ cron-job.org (Free Uptime Pings)
 Step 1: Twitch Developer & Bot Setup
 1. Bot Moderation
 To bypass standard chat rate limits (raising allowances to 100 messages per 30 seconds), open your main channel's Twitch chat and run:
-/mod YOUR_BOT_USERNAME
+
+Plaintext
+/mod modem3788
 2. Register Application
-Go to the Twitch Developer Console. https://dev.twitch.tv/console/apps
+Go to the Twitch Developer Console.
 
 Click Register Your Application.
 
@@ -66,9 +73,11 @@ Set OAuth Redirect URLs to https://localhost.
 Choose Chat Bot under Category, save, and copy your Client ID.
 
 3. Generate Bot OAuth Token
-Open an Incognito window and log into Twitch as your Bot Account.
+Open an Incognito window and log into Twitch as your Bot Account (modem3788).
 
 Visit this authorization URL in your browser (substitute YOUR_CLIENT_ID):
+
+Plaintext
 https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=https://localhost&response_type=token&scope=user:write:chat+user:read:chat+chat:edit
 Click Authorize.
 
@@ -77,39 +86,42 @@ The browser will redirect to https://localhost/#access_token=.... Copy the strin
 4. Locate Channel & Bot Numeric IDs
 Twitch requires numeric IDs for dispatch. Use DecAPI to retrieve them:
 
-Broadcaster ID: Visit https://decapi.me/twitch/id/YOUR_MAIN_CHANNEL
+Broadcaster ID: Visit [https://decapi.me/twitch/id/werewolf3788](https://decapi.me/twitch/id/werewolf3788)
 
-Bot Sender ID: Visit https://decapi.me/twitch/id/YOUR_BOT_USERNAME
+Bot Sender ID: Visit [https://decapi.me/twitch/id/modem3788](https://decapi.me/twitch/id/modem3788)
 
 Step 2: Google Apps Script Dispatcher
-Navigate to Google Apps Script ( https://script.google.com/ ) and create a new project.
+Navigate to Google Apps Script and open your project.
 
-Replace all code in Code.gs with the following template:
-// ==========================================
-// CONFIGURATION: Replace with your credentials
-// ==========================================
+Replace all code in Code.gs with the following:
+
+JavaScript
+// Section: Configuration & Identity Constants (Lines 2-12)
 const TWITCH_CONFIG = {
-  clientId: "YOUR_TWITCH_CLIENT_ID",
-  userOAuthToken: "YOUR_BOT_OAUTH_TOKEN", // Token generated by the Bot account
-  broadcasterId: "YOUR_BROADCASTER_NUMERIC_ID", // Numeric ID for main channel
-  senderId: "YOUR_BOT_NUMERIC_ID",             // Numeric ID for bot account
-  channelName: "YOUR_MAIN_CHANNEL_NAME"
+  clientId: "8ubk5i0cuupez9vd5jgvu2qphkc2gf",
+  userOAuthToken: "kincszoi7focc5efl78yehxiaqgnu7", // Extracted token for modem3788
+  broadcasterId: "896952944",                        // werewolf3788
+  senderId: "1556323775",                            // modem3788
+  channelName: "werewolf3788"
 };
 
-// Stream Live Checker
+// Section: Stream Uptime Gatekeeper (Lines 14-25)
 function isStreamLive() {
-  const uptimeUrl = "[https://decapi.me/twitch/uptime/](https://decapi.me/twitch/uptime/)" + TWITCH_CONFIG.channelName;
+  const uptimeUrl = "https://decapi.me/twitch/uptime/" + TWITCH_CONFIG.channelName;
   try {
     const res = UrlFetchApp.fetch(uptimeUrl, { muteHttpExceptions: true });
-    return !res.getContentText().toLowerCase().includes("offline");
-  } catch (e) {
-    return true; // Failsafe allows message through if check errors
+    const text = res.getContentText().trim().toLowerCase();
+    return !text.includes("offline");
+  } catch (err) {
+    Logger.log("Failed to query DecAPI uptime: " + err);
+    return false;
   }
 }
 
-// Helix API Message Sender
+// Section: Helix Chat Message Dispatcher (Lines 27-56)
 function sendTwitchChatMessage(rawMessage) {
-  const endpoint = "[https://api.twitch.tv/helix/chat/messages](https://api.twitch.tv/helix/chat/messages)";
+  const endpoint = "https://api.twitch.tv/helix/chat/messages";
+
   const payload = {
     broadcaster_id: TWITCH_CONFIG.broadcasterId,
     sender_id: TWITCH_CONFIG.senderId,
@@ -127,10 +139,18 @@ function sendTwitchChatMessage(rawMessage) {
     muteHttpExceptions: true
   };
 
-  return UrlFetchApp.fetch(endpoint, options);
+  const response = UrlFetchApp.fetch(endpoint, options);
+  const statusCode = response.getResponseCode();
+  const responseText = response.getContentText();
+
+  if (statusCode === 200) {
+    Logger.log("Message delivered via modem3788: " + rawMessage);
+  } else {
+    Logger.log("Error posting to chat (" + statusCode + "): " + responseText);
+  }
 }
 
-// Web App Inbound Webhook Endpoint
+// Section: Inbound HTTP POST Webhook Receiver (Lines 58-105)
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
@@ -138,49 +158,118 @@ function doPost(e) {
     }
 
     const data = JSON.parse(e.postData.contents);
-    const platform = data.platform || "Chat";
-    const username = data.username || "Viewer";
-    const message = data.message || "";
 
-    // Ignore blank inputs or recursive Twitch messages
-    if (!message || platform.toLowerCase() === "twitch") {
+    let username = "Viewer";
+    if (data.username) {
+      username = data.username;
+    } else if (data.nickname) {
+      username = data.nickname;
+    } else if (data.uniqueId || data.unique_id) {
+      username = data.uniqueId || data.unique_id;
+    }
+
+    let message = "";
+    if (data.comment) {
+      message = data.comment;
+    } else if (data.message) {
+      message = data.message;
+    } else if (data.text) {
+      message = data.text;
+    }
+
+    // Drop empty messages or loops originating from Twitch
+    if (!message || (data.platform && data.platform.toLowerCase() === "twitch")) {
       return ContentService.createTextOutput("Ignored").setMimeType(ContentService.MimeType.TEXT);
     }
 
-    const formatted = "[" + platform + "] " + username + ": " + message;
+    // Displays "username: message"
+    const formatted = `${username}: ${message}`;
     sendTwitchChatMessage(formatted);
 
     return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
   } catch (err) {
-    Logger.log("doPost Error: " + err);
+    Logger.log("doPost error: " + err);
     return ContentService.createTextOutput("Error: " + err).setMimeType(ContentService.MimeType.TEXT);
   }
 }
 
-// Test Function
+// Section: Inbound HTTP GET Webhook Receiver for TikFinity (Lines 107-133)
+function doGet(e) {
+  try {
+    if (!e || !e.parameter) {
+      return ContentService.createTextOutput("Endpoint active. No query parameters received.").setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    const username = e.parameter.user || e.parameter.username || "Viewer";
+    const message = e.parameter.msg || e.parameter.message || e.parameter.comment || "";
+
+    if (!message) {
+      return ContentService.createTextOutput("Ignored empty message").setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    // Displays "username: message"
+    const formatted = `${username}: ${message}`;
+    sendTwitchChatMessage(formatted);
+
+    return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
+  } catch (err) {
+    Logger.log("doGet error: " + err);
+    return ContentService.createTextOutput("Error: " + err).setMimeType(ContentService.MimeType.TEXT);
+  }
+}
+
+// Section: Manual Test Function (Lines 135-138)
 function testRelayBot() {
-  sendTwitchChatMessage("[Relay Engine] Bot is online and functional.");
+  sendTwitchChatMessage("[Relay Engine] modem3788 is connected and ready to relay.");
 }
 Deploy the Web App:
 
-Click Deploy > New deployment.
+Click Deploy > Manage deployments.
 
-Select Web app via the gear icon.
+Click the Edit (pencil) icon.
 
-Set Execute as: Me.
+Version: select New version.
 
-Set Who has access: Anyone.
+Click Deploy and confirm your Web App URL matches:
 
-Click Deploy and copy your Web App URL (ends in /exec).
+Plaintext
+https://script.google.com/macros/s/AKfycbyBD9lXckvfxNP0McP5kDuyKy8nX9LwAkXWCak_sHjPEytMH_4RYyLrjP4aZyqigJKR/exec
+Step 3: TikFinity Cloud Webhook Setup (TikTok)
+Open TikFinity Actions.
 
-Step 3: Render Ingestion Service Files
-Create a GitHub repository containing these two files:
+Click Create new Action.
+
+Set Name: Twitch Chat Webhook.
+
+Check Trigger WebHook.
+
+Paste this exact target URL into the WebHook field:
+
+Plaintext
+https://script.google.com/macros/s/AKfycbyBD9lXckvfxNP0McP5kDuyKy8nX9LwAkXWCak_sHjPEytMH_4RYyLrjP4aZyqigJKR/exec?user=%username%&msg=%commandParams%&platform=TikTok
+Ensure Global Cooldown and User Cooldown are set to 0 seconds.
+
+Click Save Action.
+
+Go to Events on the left menu:
+
+Click Create new Event.
+
+Trigger Event: Chat Message (or User sends a comment).
+
+Actions: Check Twitch Chat Webhook.
+
+Click Save Event.
+
+Step 4: Render Ingestion Service Files (YouTube & Nimo TV)
+In your GitHub repository (Werewolf3788/tiktok-twitch-relay), maintain these two files:
 
 package.json
+JSON
 {
   "name": "tiktok-twitch-relay",
   "version": "1.0.0",
-  "description": "TikTok & Nimo TV Live Chat to Twitch Relay",
+  "description": "TikTok, Nimo TV & YouTube Live Chat to Twitch Relay",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -189,39 +278,60 @@ package.json
     "@sparticuz/chromium": "^131.0.1",
     "express": "^4.19.2",
     "puppeteer-core": "^23.6.0",
-    "tiktok-live-connector": "^1.1.1"
+    "tiktok-live-connector": "^2.0.0",
+    "youtube-chat": "^2.2.0"
   }
 }
 server.js
+JavaScript
+// Section: Web Server & Express Keep-Alive (Lines 2-18)
 const express = require('express');
-const { WebcastPushConnection } = require('tiktok-live-connector');
+const TikTokPackage = require('tiktok-live-connector');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
+const { LiveChat } = require('youtube-chat');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('Chat Relay Worker is running.'));
+app.get('/', (req, res) => res.send('Chat Relay Worker (TikTok, Nimo & YouTube) is running.'));
 app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
 
-// ==========================================
-// CONFIGURATION: Replace with your details
-// ==========================================
-const TIKTOK_USERNAME = 'YOUR_TIKTOK_USERNAME';     // Without @
-const TWITCH_CHANNEL = 'YOUR_MAIN_TWITCH_CHANNEL';   // For DecAPI uptime checks
-const NIMO_CHANNEL_ID = 'YOUR_NIMO_NUMERIC_ID';      // From popout URL: /popout/chat/{ID}
-const GAS_WEBHOOK_URL = 'YOUR_GOOGLE_APPS_SCRIPT_EXEC_URL';
+// Section: Stream Target & Webhook Configuration (Lines 20-33)
+const TIKTOK_USERNAME = 'k082412';
+const TIKTOK_SESSION_ID = process.env.TIKTOK_SESSION_ID || '';
+const TWITCH_CHANNEL = 'werewolf3788';
+const NIMO_CHANNEL_ID = '1465016441';
+const YOUTUBE_CHANNEL_ID = 'UCYrxPkCw_Q2Fw02VFfumfyQ';
+const GAS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyBD9lXckvfxNP0McP5kDuyKy8nX9LwAkXWCak_sHjPEytMH_4RYyLrjP4aZyqigJKR/exec';
 
 let isTwitchActive = false;
 let tiktokLiveConnection = null;
 let nimoBrowser = null;
 let isNimoRunning = false;
+let youtubeLiveChat = null;
+let isYouTubeRunning = false;
 
-// Check if stream is live using DecAPI
+// Section: Universal TikTok Constructor Resolver (Lines 35-47)
+function createTikTokConnection(username, options) {
+  if (TikTokPackage.TikTokLiveConnection) {
+    return new TikTokPackage.TikTokLiveConnection(username, options);
+  }
+  if (TikTokPackage.WebcastPushConnection) {
+    return new TikTokPackage.WebcastPushConnection(username, options);
+  }
+  if (typeof TikTokPackage === 'function') {
+    return new TikTokPackage(username, options);
+  }
+  throw new Error('Constructor not found');
+}
+
+// Section: DecAPI Twitch Stream Checker (Lines 49-61)
 async function isTwitchLive() {
   try {
-    const res = await fetch(`[https://decapi.me/twitch/uptime/$](https://decapi.me/twitch/uptime/$){TWITCH_CHANNEL}`);
+    const res = await fetch(`https://decapi.me/twitch/uptime/${TWITCH_CHANNEL}`);
     const text = await res.text();
+    console.log(`[DecAPI Check] Result for ${TWITCH_CHANNEL}: "${text.trim()}"`);
     return !text.toLowerCase().includes('offline');
   } catch (err) {
     console.error('DecAPI check error:', err.message);
@@ -229,55 +339,72 @@ async function isTwitchLive() {
   }
 }
 
-// Forward message to Google Apps Script
+// Section: Dispatch to Google Apps Script (Lines 63-79)
 function relayToAppsScript(platform, username, message) {
   const payload = { platform, username, message };
+  console.log(`[Relay Triggered] Sending ${platform} message from ${username} to Apps Script...`);
+
   fetch(GAS_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   })
   .then(res => res.text())
-  .then(() => console.log(`[Relayed - ${platform}] ${username}: ${message}`))
-  .catch(err => console.error(`Error relaying ${platform} chat:`, err.message));
+  .then(body => console.log(`[GAS Response - ${platform}] Status text: ${body}`))
+  .catch(err => console.error(`Error relaying ${platform} chat to Apps Script:`, err.message));
 }
 
-// TikTok Listener
+// Section: TikTok Connection Manager (Lines 81-127)
 function startTikTokListener() {
   if (tiktokLiveConnection) return;
   console.log(`[TikTok] Initializing connection for @${TIKTOK_USERNAME}...`);
-  tiktokLiveConnection = new WebcastPushConnection(TIKTOK_USERNAME);
 
-  tiktokLiveConnection.connect().then(state => {
-    console.log(`[TikTok] Connected to Room ID: ${state.roomId}`);
-  }).catch(err => {
-    console.log('[TikTok] Not live or connection error.');
-    tiktokLiveConnection = null;
-  });
+  const connectionOptions = {
+    enableExtendedGiftInfo: false
+  };
 
-  tiktokLiveConnection.on('chat', data => {
-    relayToAppsScript('TikTok', data.nickname || data.uniqueId, data.comment);
-  });
+  if (TIKTOK_SESSION_ID) {
+    connectionOptions.sessionId = TIKTOK_SESSION_ID;
+  }
 
-  tiktokLiveConnection.on('streamEnd', () => {
-    console.log('[TikTok] Stream ended.');
-    if (tiktokLiveConnection) {
-      tiktokLiveConnection.disconnect();
+  try {
+    tiktokLiveConnection = createTikTokConnection(TIKTOK_USERNAME, connectionOptions);
+
+    tiktokLiveConnection.connect().then(state => {
+      console.log(`[TikTok] Connected to Room ID: ${state.roomId}`);
+    }).catch(err => {
+      console.log(`[TikTok] Not live or connection error: ${err.message || err}`);
       tiktokLiveConnection = null;
-    }
-  });
+    });
 
-  tiktokLiveConnection.on('disconnected', () => {
-    console.log('[TikTok] Socket disconnected.');
+    tiktokLiveConnection.on('chat', data => {
+      console.log(`[TikTok Chat Inbound] ${data.uniqueId}: ${data.comment}`);
+      relayToAppsScript('TikTok', data.nickname || data.uniqueId, data.comment);
+    });
+
+    tiktokLiveConnection.on('streamEnd', () => {
+      console.log('[TikTok] Stream ended.');
+      if (tiktokLiveConnection) {
+        tiktokLiveConnection.disconnect();
+        tiktokLiveConnection = null;
+      }
+    });
+
+    tiktokLiveConnection.on('disconnected', () => {
+      console.log('[TikTok] Socket disconnected.');
+      tiktokLiveConnection = null;
+    });
+  } catch (e) {
+    console.error('[TikTok Loader Error]:', e.message);
     tiktokLiveConnection = null;
-  });
+  }
 }
 
-// Nimo Headless Scraper
+// Section: Lightweight Nimo TV Headless Scraper (Lines 129-196)
 async function startNimoListener() {
   if (isNimoRunning) return;
   isNimoRunning = true;
-  console.log('[Nimo] Launching headless browser listener...');
+  console.log('[Nimo] Launching lightweight browser listener...');
 
   try {
     nimoBrowser = await puppeteer.launch({
@@ -298,8 +425,7 @@ async function startNimoListener() {
     });
 
     const page = await nimoBrowser.newPage();
-
-    // Block heavy static assets to conserve RAM
+    
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const type = req.resourceType();
@@ -314,9 +440,9 @@ async function startNimoListener() {
       relayToAppsScript('Nimo', user, text);
     });
 
-    const popoutUrl = `[https://dashboard.nimo.tv/popout/chat/$](https://dashboard.nimo.tv/popout/chat/$){NIMO_CHANNEL_ID}`;
+    const popoutUrl = `https://dashboard.nimo.tv/popout/chat/${NIMO_CHANNEL_ID}`;
     await page.goto(popoutUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    console.log('[Nimo] Connected. Monitoring chat messages...');
+    console.log('[Nimo] Page loaded. Watching DOM mutations...');
 
     await page.evaluate(() => {
       const seen = new Set();
@@ -344,7 +470,7 @@ async function startNimoListener() {
       observer.observe(document.body, { childList: true, subtree: true });
     });
   } catch (err) {
-    console.error('[Nimo] Error encountered:', err.message);
+    console.error('[Nimo] Listener encountered error:', err.message);
     stopNimoListener();
   }
 }
@@ -358,39 +484,90 @@ function stopNimoListener() {
   console.log('[Nimo] Listener stopped.');
 }
 
-// Master Polling Loop
-async function loopWatcher() {
-  const live = await isTwitchLive();
+// Section: YouTube Live Chat Listener (Lines 198-238)
+function startYouTubeListener() {
+  if (isYouTubeRunning) return;
 
-  if (!live) {
-    if (isTwitchActive) {
-      console.log('[Twitch Offline] Stopping listeners...');
-      if (tiktokLiveConnection) {
-        tiktokLiveConnection.disconnect();
-        tiktokLiveConnection = null;
+  console.log(`[YouTube] Attaching listener for channel: ${YOUTUBE_CHANNEL_ID}...`);
+  try {
+    youtubeLiveChat = new LiveChat({ channelId: YOUTUBE_CHANNEL_ID });
+
+    youtubeLiveChat.on('start', (liveId) => {
+      isYouTubeRunning = true;
+      console.log(`[YouTube] Connected to active live stream: ${liveId}`);
+    });
+
+    youtubeLiveChat.on('chat', (chatItem) => {
+      const author = chatItem.author ? chatItem.author.name : 'YouTubeViewer';
+      const text = chatItem.message ? chatItem.message.map(m => m.text).join('') : '';
+      if (text) {
+        console.log(`[YouTube Chat Inbound] ${author}: ${text}`);
+        relayToAppsScript('YouTube', author, text);
       }
-      stopNimoListener();
-      isTwitchActive = false;
-    }
-    setTimeout(loopWatcher, 60000);
-    return;
-  }
+    });
 
-  if (!isTwitchActive) {
-    console.log('[Twitch Live!] Starting chat relays...');
-    isTwitchActive = true;
-  }
+    youtubeLiveChat.on('end', (reason) => {
+      console.log(`[YouTube] Stream ended (${reason || 'closed'}).`);
+      stopYouTubeListener();
+    });
 
-  startTikTokListener();
-  if (!isNimoRunning) {
-    startNimoListener();
-  }
+    youtubeLiveChat.on('error', (err) => {
+      console.error('[YouTube] Chat listener error:', err.message || err);
+      stopYouTubeListener();
+    });
 
-  setTimeout(loopWatcher, 120000);
+    youtubeLiveChat.start();
+  } catch (e) {
+    console.error('[YouTube Loader Error]:', e.message);
+    stopYouTubeListener();
+  }
 }
 
+function stopYouTubeListener() {
+  if (youtubeLiveChat) {
+    try {
+      youtubeLiveChat.stop();
+    } catch (e) {}
+    youtubeLiveChat = null;
+  }
+  isYouTubeRunning = false;
+  console.log('[YouTube] Listener stopped.');
+}
+
+// Section: Master Polling Engine (Lines 240-272)
+async function loopWatcher() {
+  const live = await isTwitchLive();
+  console.log(`[Stream Gate] Twitch live state is: ${live}`);
+
+  if (live) {
+    startTikTokListener();
+    if (!isNimoRunning) {
+      startNimoListener();
+    }
+    if (!isYouTubeRunning) {
+      startYouTubeListener();
+    }
+  } else {
+    if (isNimoRunning) {
+      stopNimoListener();
+    }
+    if (isYouTubeRunning) {
+      stopYouTubeListener();
+    }
+    if (tiktokLiveConnection) {
+      try {
+        tiktokLiveConnection.disconnect();
+      } catch (e) {}
+      tiktokLiveConnection = null;
+    }
+  }
+
+  setTimeout(loopWatcher, 60000);
+}
+
+// Kick off loop
 loopWatcher();
-Step 4: Render Deployment Settings
+Step 5: Render Deployment Settings
 Connect your repository on dashboard.render.com.
 
 Select Web Service.
@@ -407,40 +584,11 @@ Instance Type: Free
 
 Deploy the service.
 
-Step 5: Keep-Alive Ping (Preventing Sleep)
+Step 6: Keep-Alive Ping (Preventing Sleep)
 Free Render instances suspend after 15 minutes of inbound inactivity. To keep your background listener running:
 
-Open cron-job.org (or any free uptime monitor).
+Open cron-job.org.
 
-Set up an HTTP GET request pointing to your Render app URL (e.g., https://your-service.onrender.com).
+Set up an HTTP GET request pointing to your Render service URL (e.g., [https://tiktok-twitch-relay.onrender.com](https://tiktok-twitch-relay.onrender.com)).
 
-Set the schedule to run every 10 minutes. 
-
-
----
-
-## 🤖 Need Help? Instant AI Setup Assistant
-
-If you get stuck or want step-by-step guidance tailored to your exact channel names, you can hand this entire repository to an AI setup assistant:
-
-[![Open in Claude](https://img.shields.io/badge/Setup_with-Claude-7A5CFA?style=for-the-badge&logo=anthropic&logoColor=white)](https://claude.ai/new?q=I%20am%20setting%20up%20the%20TikTok%20and%20Nimo%20to%20Twitch%20relay%20from%20this%20repository.%20Please%20walk%20me%20through%20configuring%20my%20Twitch%20bot,%20Google%20Apps%20Script,%20and%20Render.com%20worker%20step-by-step.)
-[![Open in ChatGPT](https://img.shields.io/badge/Setup_with-ChatGPT-10A37F?style=for-the-badge&logo=openai&logoColor=white)](https://chatgpt.com/)
-[![Open in Gemini](https://img.shields.io/badge/Setup_with-Gemini-4E87F8?style=for-the-badge&logo=google&logoColor=white)](https://gemini.google.com/)
-
-### 📋 1-Click Copy Prompt for Your AI
-Copy and paste this prompt into ChatGPT, Gemini, or Claude to get guided onboarding:
-
-> ```text
-> I am setting up the cloud-native TikTok & Nimo TV to Twitch chat relay from this repository:
-> [https://github.com/Werewolf3788/tiktok-twitch-relay](https://github.com/Werewolf3788/tiktok-twitch-relay)
-> 
-> My goal is to run a 100% PC-off relay so messages from TikTok and Nimo appear in my Twitch chat while streaming from console.
-> 
-> Please act as my technical guide:
-> 1. Ask me for my Twitch channel name, Bot username, and TikTok handle.
-> 2. Walk me step-by-step through generating the Twitch OAuth token and numeric IDs.
-> 3. Provide my tailored Google Apps Script code with all my values filled in.
-> 4. Help me deploy the Render.com service and configure the 10-minute keep-alive ping.
-> ```
-
----
+Set the schedule to ping every 10 minutes.
