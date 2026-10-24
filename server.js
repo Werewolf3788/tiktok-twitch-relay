@@ -1,28 +1,27 @@
-// Section: Web Server & Express Keep-Alive (Lines 2-35)
+// Section: Web Server & Express Keep-Alive (Lines 2-16)
 const express = require('express');
 const TikTokPackage = require('tiktok-live-connector');
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
+const { LiveChat } = require('youtube-chat');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('Chat Relay Worker (TikTok & Nimo) is running.'));
+app.get('/', (req, res) => res.send('Chat Relay Worker (TikTok & YouTube) is running.'));
 app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
 
-// Section: Stream Target & Webhook Configuration (Lines 37-44)
+// Section: Stream Target & Webhook Configuration (Lines 18-30)
 const TIKTOK_USERNAME = 'k082412';
 const TIKTOK_SESSION_ID = process.env.TIKTOK_SESSION_ID || '';
 const TWITCH_CHANNEL = 'werewolf3788';
-const NIMO_CHANNEL_ID = '1465016441';
+const YOUTUBE_CHANNEL_ID = 'UCYrxPkCw_Q2Fw02VFfumfyQ';
 const GAS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyBD9lXckvfxNP0McP5kDuyKy8nX9LwAkXWCak_sHjPEytMH_4RYyLrjP4aZyqigJKR/exec';
 
 let isTwitchActive = false;
 let tiktokLiveConnection = null;
-let nimoBrowser = null;
-let isNimoRunning = false;
+let youtubeLiveChat = null;
+let isYouTubeRunning = false;
 
-// Section: Universal TikTok Constructor Resolver (Lines 46-58)
+// Section: Universal TikTok Constructor Resolver (Lines 32-44)
 function createTikTokConnection(username, options) {
   if (TikTokPackage.TikTokLiveConnection) {
     return new TikTokPackage.TikTokLiveConnection(username, options);
@@ -36,7 +35,7 @@ function createTikTokConnection(username, options) {
   throw new Error('Constructor not found');
 }
 
-// Section: DecAPI Twitch Stream Checker (Lines 60-72)
+// Section: DecAPI Twitch Stream Checker (Lines 46-58)
 async function isTwitchLive() {
   try {
     const res = await fetch(`https://decapi.me/twitch/uptime/${TWITCH_CHANNEL}`);
@@ -49,7 +48,7 @@ async function isTwitchLive() {
   }
 }
 
-// Section: Dispatch to Google Apps Script (Lines 74-90)
+// Section: Dispatch to Google Apps Script (Lines 60-76)
 function relayToAppsScript(platform, username, message) {
   const payload = { platform, username, message };
   console.log(`[Relay Triggered] Sending ${platform} message from ${username} to Apps Script...`);
@@ -64,7 +63,7 @@ function relayToAppsScript(platform, username, message) {
   .catch(err => console.error(`Error relaying ${platform} chat to Apps Script:`, err.message));
 }
 
-// Section: TikTok Connection Manager (Lines 92-138)
+// Section: TikTok Connection Manager (Lines 78-124)
 function startTikTokListener() {
   if (tiktokLiveConnection) return;
   console.log(`[TikTok] Initializing connection for @${TIKTOK_USERNAME}...`);
@@ -110,99 +109,80 @@ function startTikTokListener() {
   }
 }
 
-// Section: Lightweight Nimo TV Headless Scraper (Lines 140-207)
-async function startNimoListener() {
-  if (isNimoRunning) return;
-  isNimoRunning = true;
-  console.log('[Nimo] Launching lightweight browser listener...');
+function stopTikTokListener() {
+  if (tiktokLiveConnection) {
+    try {
+      tiktokLiveConnection.disconnect();
+    } catch (e) {}
+    tiktokLiveConnection = null;
+  }
+}
 
+// Section: YouTube Live Chat Listener (Lines 126-173)
+function startYouTubeListener() {
+  if (isYouTubeRunning) return;
+
+  console.log(`[YouTube] Attaching listener for channel: ${YOUTUBE_CHANNEL_ID}...`);
   try {
-    nimoBrowser = await puppeteer.launch({
-      args: [
-        ...chromium.args,
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ],
-      defaultViewport: { width: 400, height: 600 },
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless
+    youtubeLiveChat = new LiveChat({ channelId: YOUTUBE_CHANNEL_ID });
+
+    youtubeLiveChat.on('start', (liveId) => {
+      isYouTubeRunning = true;
+      console.log(`[YouTube] Connected to active live stream: ${liveId}`);
     });
 
-    const page = await nimoBrowser.newPage();
-    
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const type = req.resourceType();
-      if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
-        req.abort();
-      } else {
-        req.continue();
+    youtubeLiveChat.on('chat', (chatItem) => {
+      const author = chatItem.author ? chatItem.author.name : 'YouTubeViewer';
+      const text = chatItem.message ? chatItem.message.map(m => m.text).join('') : '';
+      if (text) {
+        console.log(`[YouTube Chat Inbound] ${author}: ${text}`);
+        relayToAppsScript('YouTube', author, text);
       }
     });
 
-    await page.exposeFunction('sendNimoMessage', (user, text) => {
-      relayToAppsScript('Nimo', user, text);
+    youtubeLiveChat.on('end', (reason) => {
+      console.log(`[YouTube] Stream ended (${reason || 'closed'}).`);
+      stopYouTubeListener();
     });
 
-    const popoutUrl = `https://dashboard.nimo.tv/popout/chat/${NIMO_CHANNEL_ID}`;
-    await page.goto(popoutUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    console.log('[Nimo] Page loaded. Watching DOM mutations...');
-
-    await page.evaluate(() => {
-      const seen = new Set();
-      const observer = new MutationObserver((mutations) => {
-        for (const m of mutations) {
-          for (const node of m.addedNodes) {
-            if (node.nodeType === 1) {
-              const fullText = node.innerText || node.textContent || '';
-              if (fullText && !seen.has(fullText)) {
-                seen.add(fullText);
-                if (seen.size > 200) seen.clear();
-
-                const parts = fullText.split(':');
-                if (parts.length >= 2) {
-                  const user = parts[0].trim();
-                  const msg = parts.slice(1).join(':').trim();
-                  window.sendNimoMessage(user, msg);
-                }
-              }
-            }
-          }
-        }
-      });
-
-      observer.observe(document.body, { childList: true, subtree: true });
+    youtubeLiveChat.on('error', (err) => {
+      console.error('[YouTube] Chat listener error:', err.message || err);
+      stopYouTubeListener();
     });
-  } catch (err) {
-    console.error('[Nimo] Listener encountered error:', err.message);
-    stopNimoListener();
+
+    youtubeLiveChat.start();
+  } catch (e) {
+    console.error('[YouTube Loader Error]:', e.message);
+    stopYouTubeListener();
   }
 }
 
-function stopNimoListener() {
-  if (nimoBrowser) {
-    nimoBrowser.close().catch(() => {});
-    nimoBrowser = null;
+function stopYouTubeListener() {
+  if (youtubeLiveChat) {
+    try {
+      youtubeLiveChat.stop();
+    } catch (e) {}
+    youtubeLiveChat = null;
   }
-  isNimoRunning = false;
-  console.log('[Nimo] Listener stopped.');
+  isYouTubeRunning = false;
+  console.log('[YouTube] Listener stopped.');
 }
 
-// Section: Master Polling Engine (Lines 209-230)
+// Section: Master Polling Engine (Lines 175-199)
 async function loopWatcher() {
   const live = await isTwitchLive();
-
   console.log(`[Stream Gate] Twitch live state is: ${live}`);
-  
-  startTikTokListener();
-  if (!isNimoRunning) {
-    startNimoListener();
+
+  if (live) {
+    startTikTokListener();
+    if (!isYouTubeRunning) {
+      startYouTubeListener();
+    }
+  } else {
+    stopTikTokListener();
+    if (isYouTubeRunning) {
+      stopYouTubeListener();
+    }
   }
 
   setTimeout(loopWatcher, 60000);
